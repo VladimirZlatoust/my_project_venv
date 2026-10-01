@@ -1,39 +1,55 @@
-# Имя workflow, которое будет отображаться на вкладке "Actions" в GitHub
-name: Проверка model.ipynb
+# Имя workflow, которое будет отображаться на вкладке "Actions"
+name: Проверка Jupyter Notebook
 
-# Триггеры: запускать workflow при push и pull_request в ветку main, но только если изменения затронули model.ipynb, requirements.txt или сам workflow.
+# Триггеры: запускать при push и pull_request в ветку main,
+# но только если изменения затронули model.ipynb, requirements.txt,
+# pyproject.toml или сам workflow.
 on:
   push:
     branches: [ main ]
     paths:
       - 'model.ipynb'
       - 'requirements.txt'
+      - 'requirements-dev.txt'
+      - 'pyproject.toml'
       - '.github/workflows/notebook-check.yml'
   pull_request:
     branches: [ main ]
     paths:
       - 'model.ipynb'
       - 'requirements.txt'
+      - 'requirements-dev.txt'
+      - 'pyproject.toml'
       - '.github/workflows/notebook-check.yml'
 
-jobs:
+# Права токена. По умолчанию GITHUB_TOKEN доступен только для чтения.
+# Нам НЕ нужно contents: write, потому что мы не коммитим из CI.
+# Workflow только проверяет — правки разработчик делает локально.
+permissions:
+  contents: read
 
+jobs:
+  # Единственная задача — проверка ноутбука.
   lint-and-test:
-    # Запускаем на последней версии Ubuntu.
+    # Фиксируем конкретную версию Ubuntu, чтобы избежать неожиданностей
+    # при миграции метки ubuntu-latest на Ubuntu 26.04.
+    # Когда протестируете на 26.04 — замените на ubuntu-26.04.
     runs-on: ubuntu-24.04
 
     steps:
-      # 1. Клонируем репозиторий на виртуальную машину.
+      # 1. Клонируем репозиторий.
       - name: Checkout repository
-        uses: actions/checkout@v5
+        uses: actions/checkout@v4
 
       # 2. Устанавливаем нужную версию Python.
       - name: Set up Python 3.11
-        uses: actions/setup-python@v6
+        uses: actions/setup-python@v5
         with:
           python-version: '3.11'
 
-      # 3. Устанавливаем зависимости и инструменты проверки. Используем virtualenv для изоляции окружения.
+      # 3. Устанавливаем зависимости в виртуальное окружение.
+      #    ruff заменяет собой isort + flake8 — он и линтер, и сортировщик
+      #    импортов, и совместим с Black.
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
@@ -41,37 +57,42 @@ jobs:
           virtualenv venv
           source venv/bin/activate
           # Инструменты для линтинга и проверки ноутбуков
-          pip install nbqa black isort flake8 nbconvert nbstripout
-          # Устанавливаем зависимости проекта
+          pip install nbqa black ruff nbconvert nbstripout
+          # Зависимости проекта (для выполнения ноутбука)
           if [ -f requirements.txt ]; then
             pip install -r requirements.txt
           fi
 
-      # 4. Проверка форматирования кода в ноутбуке с помощью Black. nbqa применяет black к каждой ячейке кода. Флаг --check заставляет black только проверять, не изменяя файл.
+      # 4. Проверка сортировки импортов с помощью ruff.
+      #    ruff check --select I заменяет isort.
+      #    --diff показывает diff, если импорты не отсортированы.
+      - name: Lint imports with Ruff
+        run: |
+          source venv/bin/activate
+          nbqa ruff check --select I model.ipynb
+
+      # 5. Проверка форматирования с помощью Black.
+      #    Black — финальный источник истины по стилю.
       - name: Lint with Black
         run: |
           source venv/bin/activate
           nbqa black --check model.ipynb
 
-      # 5. Проверка порядка импортов с помощью isort.
-      - name: Lint with isort
+      # 6. Проверка стиля и потенциальных багов с помощью Ruff.
+      #    Ruff читает конфигурацию из pyproject.toml.
+      - name: Lint with Ruff
         run: |
           source venv/bin/activate
-          nbqa isort --check-only model.ipynb
+          nbqa ruff check model.ipynb
 
-      # 6. Проверка синтаксиса и стиля с помощью Flake8.
-      - name: Lint with Flake8
-        run: |
-          source venv/bin/activate
-          nbqa flake8 model.ipynb
-
-      # 7. Проверка, что в ноутбуке нет сохранённых выходных данных, выходные данные могут быть большими, содержать конфиденциальную информацию и захламлять историю git.
+      # 7. Проверка, что в ноутбуке нет сохранённых выходных данных.
       - name: Verify notebook has no outputs
         run: |
           source venv/bin/activate
           nbstripout --verify model.ipynb
 
-      # 8. Выполняем ноутбук целиком, чтобы убедиться, что он работает без ошибок. Флаг --execute запускает все ячейки.
+      # 8. Выполнение ноутбука целиком — проверка на отсутствие
+      #    ошибок времени выполнения.
       - name: Execute notebook
         run: |
           source venv/bin/activate
