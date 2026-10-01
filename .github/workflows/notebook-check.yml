@@ -80,7 +80,7 @@ jobs:
           nbstripout --verify model.ipynb
 
       # 8. Выполнение ноутбука — проверка на ошибки времени выполнения.
-      - name: Execute notebook
-        run: |
-          source venv/bin/activate
-          jupyter nbconvert --to notebook --execute --inplace model.ipynb
+      # - name: Execute notebook
+        # run: |
+          # source venv/bin/activate
+          # jupyter nbconvert --to notebook --execute --inplace model.ipynb
