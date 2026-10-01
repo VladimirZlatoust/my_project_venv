@@ -20,7 +20,7 @@ jobs:
 
   lint-and-test:
     # Запускаем на последней версии Ubuntu.
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
 
     steps:
       # 1. Клонируем репозиторий на виртуальную машину.
