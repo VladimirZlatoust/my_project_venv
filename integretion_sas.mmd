@@ -1,0 +1,18 @@
+flowchart LR
+subgraph DEV["Шаг 0. Разработка (команда данных)"]
+    J["Jupyter: ноутбук model.ipynb<br/>(код обучения и метрики)"] --> GIT["Git: версионирование кода,<br/>версия датасета df.csv v1"]
+    GIT --> CICD["CI/CD: авто-прогон обучения,<br/>пересчёт метрик, тесты"]
+end
+subgraph SAS["Платформа SAS"]
+    CICD -->|артефакты: пайплайн, метрики| MM["1) РЕГИСТРАЦИЯ:<br/>SAS Model Manager -<br/>паспорт модели v1.0 + Model Card"]
+    MM --> WM["2) АВТО-ПРОВЕРКА + 3) BPMN-СОГЛАСОВАНИЕ:<br/>SAS Workflow Manager -<br/>валидация метрик, подпись бизнеса"]
+    WM --> MAS["4) ДЕПЛОЙ:<br/>SAS Micro Analytic Service -<br/>модель как REST-сервис решений"]
+    MAS --> MON["5) МОНИТОРИНГ:<br/>SAS Model Monitor -<br/>дрейф, качество, SLA, алерты"]
+end
+subgraph BIZ["Бизнес-контур"]
+    MAS --> MOD["Интерфейс модератора:<br/>серая зона и кликбейт"]
+    MOD --> LAB["Метки модератора<br/>(контрольная выборка)"]
+    LAB --> MON
+    MON --> REP["Отчёты владельцу бизнеса"]
+    MON -->|сигнал деградации| WM2["Workflow 'Переобучение'<br/>(bpmn_retrain.mmd)"]
+end
