@@ -1,0 +1,69 @@
+%% ======================================================================
+%% Файл: bpmn_operation_v2.mmd
+%% Источник истины: Model_BPMN.md (блок ```mermaid)
+%% Рендеринг: GitHub / GitLab / VS Code / Typora / mermaid-cli
+%% ======================================================================
+
+flowchart LR
+    classDef svc fill:#E3F2FD,stroke:#1565C0,stroke-width:2px,color:#0d47a1
+    classDef mdl fill:#FFF3E0,stroke:#EF6C00,stroke-width:3px,color:#bf360c
+    classDef usr fill:#E8F5E9,stroke:#2E7D32,stroke-width:2px,color:#1b5e20
+    classDef man fill:#F1F8E9,stroke:#558B2F,stroke-width:2px,color:#33691E
+    classDef gate fill:#FFF8E1,stroke:#F9A825,stroke-width:2px,color:#e65100
+    classDef ev fill:#ECEFF1,stroke:#37474F,stroke-width:2px,color:#102027
+    classDef sub fill:#F3E5F5,stroke:#6A1B9A,stroke-width:2px,color:#4A148C
+    classDef dat fill:#FCE4EC,stroke:#AD1457,stroke-width:2px,color:#880e4f
+
+    ST(("▶ Старт<br/>входящий звонок<br/>или голосовое")):::ev
+    T01[/"T01 Приём события<br/>msg_id, канал, timestamp<br/>Приложение"/]:::svc
+    T02[/"T02 Распознавание речи + clean_text<br/>регистр, ё→е, HTML, URL, числа→NUM<br/>Приложение"/]:::svc
+    T03{{"T03 СКОРИНГ МОДЕЛЬЮ v1.0 · spam_clickbait_classifier_ru<br/>TF-IDF word 1-2 + char_wb 3-5 → LogReg C=10, balanced<br/>60 000 признаков · ~1 мс · Приложение (on-device)"}}:::mdl
+    DO1[/"Скоринг: P0, P1, P2, метка, max P, версия модели"/]:::dat
+    G01{"✕ G01 Порог уверенности<br/>max P не ниже 0,60 ?"}:::gate
+    T04[/"T04 «Обычное»<br/>уведомление со звуком<br/>Приложение"/]:::svc
+    T05[/"T05 «Спам»<br/>свернуть, без звука<br/>Приложение"/]:::svc
+    G02{"✕ G02 Порог кликбейта<br/>P2 не ниже 0,80 ?"}:::gate
+    T06[/"T06 «Кликбейт»<br/>предупреждение + 10 % выборка<br/>Приложение"/]:::svc
+    T07[/"T07 РЕШЕНИЕ ПОЛЬЗОВАТЕЛЯ<br/>серая зона 2,64 % и кликбейт-коридор 1,76 %<br/>Пользователь"/]:::usr
+    T08[/"T08 Обратная связь<br/>«спам / кликбейт / обычное»<br/>Пользователь"/]:::usr
+    T09[/"T09 Журнал решений (аудит)<br/>msg_id, P0/P1/P2, решение, версия, время<br/>MLOps · SAS"/]:::svc
+    T10[/"T10 Ежедневный мониторинг<br/>PSI, баланс классов, серая зона, качество по меткам<br/>MLOps · SAS Model Monitor"/]:::svc
+    G03{"✕ G03 Шлюз SLA нарушен?<br/>F1w ниже 0,92 · F1 кликбейта ниже 0,85 ·<br/>ошибка на обычных выше 6 % · PSI выше 0,2"}:::gate
+    T11[/"T11 Инцидент: алерт, поднять порог,<br/>откат на резервные правила<br/>MLOps + бизнес"/]:::man
+    G04{"✕ G04 Системная деградация?<br/>нужно переобучение?"}:::gate
+    T12[/"T12 Отчёт KPI владельцу продукта<br/>авто-решения, блоки, жалобы, время реакции<br/>MLOps · SAS"/]:::svc
+    T13[/"T13 Управленческое решение<br/>пороги, политика, эскалация<br/>Владелец продукта"/]:::usr
+    SPO[["ОНБОРДИНГ версии v(N+1)<br/>01 Разработка → 02 Валидация →<br/>03 Утверждение (HITL) → 04 Деплой<br/>MLOps · SAS Model Manager + Workflow Manager"]]:::sub
+    SPR[["ПЕРЕОБУЧЕНИЕ → версия v(N+2)<br/>Model_retrain_BPMN.md · DS + бизнес"]]:::sub
+    WAIT(("■ Ожидание следующего события")):::ev
+    PROCEND(("■ Процесс переобучения завершён")):::ev
+    DSL1[("DS_LOG · Журнал решений и аудит")]
+    DSL2[("DS_LABELS · Метки пользователей = ground truth")]
+
+    ST --> T01 --> T02 --> T03 --> DO1 --> G01
+    G01 -->|"класс 0"| T04
+    G01 -->|"класс 1"| T05
+    G01 -->|"класс 2"| G02
+    G02 -->|"да"| T06
+    G02 -->|"нет"| T07
+    G01 -->|"серая зона"| T07
+    T07 --> T08
+    T04 --> T09
+    T05 --> T09
+    T06 --> T09
+    T07 --> T09
+    T08 --> DSL2
+    T09 --> DSL1
+    DSL1 --> T10
+    DSL2 --> T10
+    T10 --> G03
+    G03 -->|"нет"| T12
+    G03 -->|"да"| T11
+    T11 --> G04
+    G04 -->|"нет"| T12
+    G04 -->|"да"| SPR
+    SPR --> PROCEND
+    T12 --> WAIT
+    T12 --> T13
+    T13 --> G03
+    SPO --> T01

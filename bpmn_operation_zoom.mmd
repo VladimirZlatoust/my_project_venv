@@ -1,0 +1,29 @@
+%% ======================================================================
+%% Файл: bpmn_operation_zoom.mmd
+%% Источник истины: Model_BPMN.md (блок ```mermaid)
+%% Рендеринг: GitHub / GitLab / VS Code / Typora / mermaid-cli
+%% ======================================================================
+
+flowchart LR
+    classDef svc fill:#E3F2FD,stroke:#1565C0,stroke-width:2px,color:#0d47a1
+    classDef mdl fill:#FFF3E0,stroke:#EF6C00,stroke-width:3px,color:#bf360c
+    classDef usr fill:#E8F5E9,stroke:#2E7D32,stroke-width:2px,color:#1b5e20
+    classDef gate fill:#FFF8E1,stroke:#F9A825,stroke-width:2px,color:#e65100
+    classDef dat fill:#FCE4EC,stroke:#AD1457,stroke-width:2px,color:#880e4f
+
+    S[/"T03 Скоринг моделью<br/>P0 + P1 + P2 = 1"/]:::mdl
+    D[/"Data Output: метка, max P, P2, версия модели"/]:::dat
+    G1{"✕ G01 max P не ниже 0,60?"}:::gate
+    G2{"✕ G02 P2 не ниже 0,80?"}:::gate
+    N1[/"T04 «Обычное»<br/>уведомление + звук"/]:::svc
+    N2[/"T05 «Спам»<br/>свернуть, без звука"/]:::svc
+    N3[/"T06 «Кликбейт»<br/>предупреждение + 10 % проверка"/]:::svc
+    N4[/"T07 Решение пользователя<br/>серая зона и кликбейт-коридор"/]:::usr
+
+    S --> D --> G1
+    G1 -->|"да · класс 0"| N1
+    G1 -->|"да · класс 1"| N2
+    G1 -->|"да · класс 2"| G2
+    G2 -->|"да"| N3
+    G2 -->|"нет"| N4
+    G1 -->|"нет · серая зона"| N4

@@ -1,0 +1,52 @@
+%% ======================================================================
+%% Файл: mc_flow.mmd
+%% Источник истины: model_card.md (блок ```mermaid)
+%% Рендеринг: GitHub / GitLab / VS Code / Typora / mermaid-cli
+%% ======================================================================
+
+flowchart LR
+    classDef ext fill:#ECEFF1,stroke:#455A64,stroke-width:1px,color:#0d47a1
+    classDef svc fill:#E3F2FD,stroke:#1565C0,stroke-width:2px,color:#0d47a1
+    classDef mdl fill:#FFF3E0,stroke:#EF6C00,stroke-width:3px,color:#bf360c
+    classDef usr fill:#E8F5E9,stroke:#2E7D32,stroke-width:2px,color:#1b5e20
+    classDef gate fill:#FFF8E1,stroke:#F9A825,stroke-width:2px,color:#e65100
+    classDef dat fill:#F3E5F5,stroke:#6A1B9A,stroke-width:2px,color:#4A148C
+    classDef note fill:#FFFFFF,stroke:#9E9E9E,stroke-width:1px,stroke-dasharray:4 3,color:#424242
+
+    A1["Входящий звонок<br/>или голосовое сообщение<br/>(Telegram, WhatsApp, VK, MAX)"]:::ext
+    A2["Распознавание речи (STT)<br/>→ текстовая расшифровка"]:::ext
+    A3[/"T02 Предобработка<br/>clean_text: нижний регистр, ё→е,<br/>HTML/URL→URL, числа→NUM,<br/>удаление небуквенных символов"/]:::svc
+    A4{{"T03 СКОРИНГ МОДЕЛЬЮ<br/>TF-IDF word(1-2)+char_wb(3-5)<br/>→ LogReg C=10, balanced<br/>60 000 признаков"}}:::mdl
+    A5{"✕ G01 Порог уверенности<br/>max P ≥ 0,60?"}:::gate
+
+    A6["T04 «Обычное»<br/>→ обычное уведомление,<br/>звуковой сигнал"]:::usr
+    A7["T05 «Спам»<br/>→ свернуть входящий,<br/>без звука, пометка"]:::usr
+    A8{"✕ G02 Порог кликбейта<br/>P₂ ≥ 0,80?"}:::gate
+    A9["T06 «Кликбейт»<br/>→ показать с предупреждением,<br/>10 % — выборочная проверка"]:::usr
+    A10[/"T07 РЕШЕНИЕ ПОЛЬЗОВАТЕЛЯ<br/>серая зона и кликбейт-коридор:<br/>слушать → подтвердить метку"/]:::usr
+    A11[/"T08 Обратная связь<br/>«Это спам / кликбейт / обычное»<br/>→ размеченный датасет"/]:::usr
+
+    A12[("T09 Журнал решений (аудит)<br/>msg_id, текст, P0/P1/P2, метка,<br/>версия модели, время, канал")]:::dat
+    A13[/"T10 Ежедневный мониторинг<br/>PSI, баланс классов, доля серой зоны,<br/>качество по обратной связи"/]:::svc
+    A14{"✕ G03 Шлюз SLA нарушен?"}:::gate
+    A15["T11 Инцидент: алерт,<br/>ужесточение порога,<br/>откат на резервные правила"]:::usr
+    A16[["СД RETRAIN<br/>Model_retrain_BPMN.md"]]:::gate
+
+    A1 --> A2 --> A3 --> A4 --> A5
+    A5 -- "да · класс 0" --> A6
+    A5 -- "да · класс 1" --> A7
+    A5 -- "да · класс 2" --> A8
+    A8 -- "да" --> A9
+    A8 -- "нет" --> A10
+    A5 -- "нет · серая зона" --> A10
+    A6 --> A12
+    A7 --> A12
+    A9 --> A12
+    A10 --> A12
+    A10 --> A11
+    A11 --> A13
+    A12 --> A13
+    A13 --> A14
+    A14 -- "нет" --> A6
+    A14 -- "да" --> A15
+    A15 --> A16

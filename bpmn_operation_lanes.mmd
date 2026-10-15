@@ -1,0 +1,78 @@
+%% ======================================================================
+%% Файл: bpmn_operation_lanes.mmd
+%% Источник истины: Model_BPMN.md (блок ```mermaid)
+%% Рендеринг: GitHub / GitLab / VS Code / Typora / mermaid-cli
+%% ======================================================================
+
+flowchart TB
+    classDef svc fill:#E3F2FD,stroke:#1565C0,stroke-width:2px,color:#0d47a1
+    classDef mdl fill:#FFF3E0,stroke:#EF6C00,stroke-width:3px,color:#bf360c
+    classDef usr fill:#E8F5E9,stroke:#2E7D32,stroke-width:2px,color:#1b5e20
+    classDef man fill:#F1F8E9,stroke:#558B2F,stroke-width:2px,color:#33691E
+    classDef gate fill:#FFF8E1,stroke:#F9A825,stroke-width:2px,color:#e65100
+    classDef ev fill:#ECEFF1,stroke:#37474F,stroke-width:2px,color:#102027
+    classDef sub fill:#F3E5F5,stroke:#6A1B9A,stroke-width:2px,color:#4A148C
+    classDef dat fill:#FCE4EC,stroke:#AD1457,stroke-width:2px,color:#880e4f
+
+    subgraph P1["ПУЛ 1 · Смартфон · Приложение"]
+        direction TB
+        L1start["Дорожка L1 · ML-сервис скоринга (on-device)"]:::ev
+        L1a[/"T01 Приём события"/]:::svc
+        L1b[/"T02 STT + clean_text"/]:::svc
+        L1c{{"T03 Скоринг моделью v1.0"/}}:::mdl
+        L1d[/"Data Output скоринга"/]:::dat
+        L1e{"✕ G01 max P ≥ 0,60?"}:::gate
+        L1f[/"T04 «Обычное» · уведомление"/]:::svc
+        L1g[/"T05 «Спам» · свернуть"/]:::svc
+        L1h{"✕ G02 P2 ≥ 0,80?"}:::gate
+        L1i[/"T06 «Кликбейт» · предупреждение"/]:::svc
+        L1end(("■ Ожидание события")):::ev
+        L1start --> L1a --> L1b --> L1c --> L1d --> L1e
+        L1e -->|"0"| L1f --> L1end
+        L1e -->|"1"| L1g --> L1end
+        L1e -->|"2"| L1h
+        L1h -->|"да"| L1i --> L1end
+    end
+
+    subgraph P2["ПУЛ 2 · Пользователь"]
+        direction TB
+        L2start["Дорожка L2 · Human-in-the-loop"]:::ev
+        L2a[/"T07 Решение пользователя"/]:::usr
+        L2b[/"T08 Обратная связь, метка"/]:::usr
+        L2start --> L2a --> L2b
+    end
+
+    subgraph P3["ПУЛ 3 · MLOps и Governance (SAS)"]
+        direction TB
+        L3start["Дорожка L3 · Мониторинг и управление"]:::ev
+        L3a[/"T09 Журнал решений (аудит)"/]:::svc
+        L3b[/"T10 Мониторинг (SAS Model Monitor)"/]:::svc
+        L3c{"✕ G03 SLA нарушен?"}:::gate
+        L3d[/"T11 Инцидент и корректирующие действия"/]:::man
+        L3e{"✕ G04 Системная деградация?"}:::gate
+        L3f[/"T12 Отчёт KPI владельцу продукта"/]:::svc
+        L3g[["Онбординг версии v(N+1) · 01→02→03→04"]]:::sub
+        L3h[["Переобучение v(N+2) · Model_retrain_BPMN.md"]]:::sub
+        L3start --> L3a --> L3b --> L3c
+        L3c -->|"нет"| L3f
+        L3c -->|"да"| L3d --> L3e
+        L3e -->|"нет"| L3f
+        L3e -->|"да"| L3h
+    end
+
+    subgraph P4["ПУЛ 4 · Владелец продукта"]
+        direction TB
+        L4start["Дорожка L4 · Бизнес-контур"]:::ev
+        L4a[/"T13 Управленческое решение по KPI"/]:::usr
+        L4start --> L4a
+    end
+
+    L1e -.->|"серая зона"| L2a
+    L1h -.->|"коридор 0,60–0,80"| L2a
+    L2b -.-> L3a
+    L1f -.-> L3a
+    L1g -.-> L3a
+    L1i -.-> L3a
+    L3f -.->|"отчёт"| L4a
+    L4a -.->|"решение"| L3c
+    L3g -.->|"в эксплуатацию"| L1a

@@ -1,0 +1,480 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL" xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI" xmlns:dc="http://www.omg.org/spec/DD/20100524/DC" xmlns:di="http://www.omg.org/spec/DD/20100524/DI" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" id="Definitions_Process_Operation" targetNamespace="http://bpmn.io/schema/bpmn" exporter="OpenCode" exporterVersion="1.0">
+  <bpmn:dataStore id="DS_LOG" name="DS_LOG · Журнал решений и аудит (SAS)"/>
+  <bpmn:dataStore id="DS_LABELS" name="DS_LABELS · Метки пользователей — ground truth"/>
+  <bpmn:dataStore id="DS_REF" name="DS_REF · Справочник версий моделей"/>
+  <bpmn:process id="Process_Operation" name="Обработка входящих голосовых сообщений и звонков — эксплуатация модели v1.0" isExecutable="false">
+    <bpmn:laneSet id="LaneSet_Process_Operation">
+      <bpmn:lane id="Lane_App" name="L1 · Смартфон · Приложение — ML-сервис скоринга (on-device)">
+        <bpmn:flowNodeRef>Start_Incoming</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>T01_Receive</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>T02_Preproc</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>T03_Model</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>DO_ScoringRef</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>G01_Conf</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>T04_Normal</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>T05_Spam</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>G02_Clickbait</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>T06_Clickbait</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>End_Wait</bpmn:flowNodeRef>
+      </bpmn:lane>
+      <bpmn:lane id="Lane_User" name="L2 · Пользователь — Human-in-the-loop">
+        <bpmn:flowNodeRef>T07_UserDecision</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>T08_Feedback</bpmn:flowNodeRef>
+      </bpmn:lane>
+      <bpmn:lane id="Lane_MLOps" name="L3 · MLOps и Governance (SAS) — мониторинг и управление">
+        <bpmn:flowNodeRef>SP_Onboard</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Start_VersionReady</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>T09_Audit</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>T10_Monitor</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>G03_SLA</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>T12_Report</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>T11_Incident</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>G04_Degradation</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>SP_Retrain</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>End_Process</bpmn:flowNodeRef>
+      </bpmn:lane>
+      <bpmn:lane id="Lane_Owner" name="L4 · Владелец продукта — бизнес-контур">
+        <bpmn:flowNodeRef>T13_OwnerDecision</bpmn:flowNodeRef>
+      </bpmn:lane>
+    </bpmn:laneSet>
+    <bpmn:dataObject id="DO_SCORING" name="Скоринг: P0, P1, P2, метка, max P, версия модели"/>
+    <bpmn:dataStoreReference id="dsr_DS_LOG" dataStoreRef="DS_LOG"/>
+    <bpmn:dataStoreReference id="dsr_DS_LABELS" dataStoreRef="DS_LABELS"/>
+    <bpmn:startEvent id="Start_Incoming" name="Входящий звонок или голосовое сообщение"/>
+    <bpmn:receiveTask id="T01_Receive" name="T01 Приём события: msg_id, канал, timestamp, аудиопоток"/>
+    <bpmn:serviceTask id="T02_Preproc" name="T02 Распознавание речи (STT) + предобработка clean_text"/>
+    <bpmn:serviceTask id="T03_Model" name="T03 СКОРИНГ МОДЕЛЬЮ v1.0 · TF-IDF word 1-2 + char_wb 3-5 → LogReg C=10 · 60 000 признаков"/>
+    <bpmn:dataObjectReference id="DO_ScoringRef" dataObjectRef="DO_SCORING"/>
+    <bpmn:exclusiveGateway id="G01_Conf" name="G01 Порог уверенности: max P ≥ 0,60 ?"/>
+    <bpmn:sendTask id="T04_Normal" name="T04 «Обычное»: уведомление со звуком"/>
+    <bpmn:sendTask id="T05_Spam" name="T05 «Спам»: свернуть, без звука, в папку «Спам»"/>
+    <bpmn:exclusiveGateway id="G02_Clickbait" name="G02 Порог кликбейта: P2 ≥ 0,80 ?"/>
+    <bpmn:sendTask id="T06_Clickbait" name="T06 «Кликбейт»: предупреждение + 10 % выборочная проверка"/>
+    <bpmn:endEvent id="End_Wait" name="Ожидание следующего события"/>
+    <bpmn:userTask id="T07_UserDecision" name="T07 РЕШЕНИЕ ПОЛЬЗОВАТЕЛЯ (серая зона 2,64 % и кликбейт-коридор 1,76 %)"/>
+    <bpmn:userTask id="T08_Feedback" name="T08 Обратная связь: метка «спам / кликбейт / обычное»"/>
+    <bpmn:subProcess id="SP_Onboard" name="Онбординг версии v(N+1): 01 Разработка → 02 Валидация → 03 Утверждение (HITL) → 04 Деплой"/>
+    <bpmn:startEvent id="Start_VersionReady" name="v(N+1) зарегистрирована в SAS Model Manager"/>
+    <bpmn:serviceTask id="T09_Audit" name="T09 Журнал решений (аудит): msg_id, P0/P1/P2, решение, версия, время"/>
+    <bpmn:serviceTask id="T10_Monitor" name="T10 Ежедневный мониторинг: SAS Model Monitor"/>
+    <bpmn:exclusiveGateway id="G03_SLA" name="G03 Шлюз SLA нарушен?"/>
+    <bpmn:serviceTask id="T12_Report" name="T12 Отчёт KPI владельцу продукта"/>
+    <bpmn:manualTask id="T11_Incident" name="T11 Инцидент: алерт, поднять порог, откат на резервные правила"/>
+    <bpmn:exclusiveGateway id="G04_Degradation" name="G04 Системная деградация? Нужно переобучение?"/>
+    <bpmn:subProcess id="SP_Retrain" name="Переобучение → версия v(N+2): см. Model_retrain_BPMN.md"/>
+    <bpmn:endEvent id="End_Process" name="Процесс переобучения завершён"/>
+    <bpmn:userTask id="T13_OwnerDecision" name="T13 Управленческое решение по KPI: пороги, политика, эскалация"/>
+    <bpmn:sequenceFlow id="sf_1" sourceRef="Start_Incoming" targetRef="T01_Receive"/>
+    <bpmn:sequenceFlow id="sf_2" sourceRef="T01_Receive" targetRef="T02_Preproc"/>
+    <bpmn:sequenceFlow id="sf_3" sourceRef="T02_Preproc" targetRef="T03_Model"/>
+    <bpmn:sequenceFlow id="sf_4" sourceRef="T03_Model" targetRef="DO_ScoringRef"/>
+    <bpmn:sequenceFlow id="sf_5" sourceRef="DO_ScoringRef" targetRef="G01_Conf"/>
+    <bpmn:sequenceFlow id="sf_6" sourceRef="G01_Conf" targetRef="T04_Normal"><bpmn:conditionExpression xsi:type="bpmn:tFormalExpression">класс 0</bpmn:conditionExpression></bpmn:sequenceFlow>
+    <bpmn:sequenceFlow id="sf_7" sourceRef="G01_Conf" targetRef="T05_Spam"><bpmn:conditionExpression xsi:type="bpmn:tFormalExpression">класс 1</bpmn:conditionExpression></bpmn:sequenceFlow>
+    <bpmn:sequenceFlow id="sf_8" sourceRef="G01_Conf" targetRef="G02_Clickbait"><bpmn:conditionExpression xsi:type="bpmn:tFormalExpression">класс 2</bpmn:conditionExpression></bpmn:sequenceFlow>
+    <bpmn:sequenceFlow id="sf_9" sourceRef="G02_Clickbait" targetRef="T06_Clickbait"><bpmn:conditionExpression xsi:type="bpmn:tFormalExpression">да: P2 ≥ 0,80</bpmn:conditionExpression></bpmn:sequenceFlow>
+    <bpmn:sequenceFlow id="sf_10" sourceRef="T04_Normal" targetRef="End_Wait"/>
+    <bpmn:sequenceFlow id="sf_11" sourceRef="T05_Spam" targetRef="End_Wait"/>
+    <bpmn:sequenceFlow id="sf_12" sourceRef="T06_Clickbait" targetRef="End_Wait"/>
+    <bpmn:sequenceFlow id="sf_13" sourceRef="T07_UserDecision" targetRef="T08_Feedback"/>
+    <bpmn:sequenceFlow id="sf_14" sourceRef="SP_Onboard" targetRef="Start_VersionReady"/>
+    <bpmn:sequenceFlow id="sf_15" sourceRef="T09_Audit" targetRef="T10_Monitor"/>
+    <bpmn:sequenceFlow id="sf_16" sourceRef="T10_Monitor" targetRef="G03_SLA"/>
+    <bpmn:sequenceFlow id="sf_17" sourceRef="G03_SLA" targetRef="T12_Report"><bpmn:conditionExpression xsi:type="bpmn:tFormalExpression">нет: SLA соблюдён</bpmn:conditionExpression></bpmn:sequenceFlow>
+    <bpmn:sequenceFlow id="sf_18" sourceRef="G03_SLA" targetRef="T11_Incident"><bpmn:conditionExpression xsi:type="bpmn:tFormalExpression">да: SLA нарушен</bpmn:conditionExpression></bpmn:sequenceFlow>
+    <bpmn:sequenceFlow id="sf_19" sourceRef="T11_Incident" targetRef="G04_Degradation"/>
+    <bpmn:sequenceFlow id="sf_20" sourceRef="G04_Degradation" targetRef="T12_Report"><bpmn:conditionExpression xsi:type="bpmn:tFormalExpression">нет: локальная проблема</bpmn:conditionExpression></bpmn:sequenceFlow>
+    <bpmn:sequenceFlow id="sf_21" sourceRef="G04_Degradation" targetRef="SP_Retrain"><bpmn:conditionExpression xsi:type="bpmn:tFormalExpression">да: системная деградация</bpmn:conditionExpression></bpmn:sequenceFlow>
+    <bpmn:sequenceFlow id="sf_22" sourceRef="SP_Retrain" targetRef="End_Process"/>
+    <bpmn:textAnnotation id="AN_Model"><bpmn:text>КЛЮЧЕВОЙ ШАГ: единственное место в процессе, где принимается ML-решение</bpmn:text></bpmn:textAnnotation>
+    <bpmn:textAnnotation id="AN_Gap"><bpmn:text>Доменный разрыв: обучение на печатном тексте, продукт работает с STT-транскриптами. Метрики на целевом домене не измерены</bpmn:text></bpmn:textAnnotation>
+    <bpmn:textAnnotation id="AN_Privacy"><bpmn:text>Приватность: инференс локальный, текст не покидает устройство</bpmn:text></bpmn:textAnnotation>
+    <bpmn:textAnnotation id="AN_HITL"><bpmn:text>Human-in-the-loop: модель не имеет права единолично скрыть обычное сообщение</bpmn:text></bpmn:textAnnotation>
+    <bpmn:textAnnotation id="AN_SLA"><bpmn:text>Пороги SLA-пол: F1w 0,92 · F1 кликбейта 0,85 · ошибка на обычных 6 % · PSI 0,2</bpmn:text></bpmn:textAnnotation>
+    <bpmn:textAnnotation id="AN_Calib"><bpmn:text>Пороги 0,60 / 0,80 заданы экспертно, вероятности не откалиброваны</bpmn:text></bpmn:textAnnotation>
+    <bpmn:textAnnotation id="AN_Cycle"><bpmn:text>Замкнутый цикл: мониторинг → триггер → переобучение → новая версия → мониторинг</bpmn:text></bpmn:textAnnotation>
+  </bpmn:process>
+  <bpmn:collaboration id="Collaboration_Process_Operation">
+    <bpmn:participant id="Pool_Operation" name="Процесс обработки входящих голосовых сообщений (модель в эксплуатации)" processRef="Process_Operation"/>
+    <bpmn:messageFlow id="mf_1" name="модель выведена в эксплуатацию" sourceRef="Start_VersionReady" targetRef="T01_Receive"/>
+    <bpmn:messageFlow id="mf_2" name="запрос решения: модель не уверена" sourceRef="DO_ScoringRef" targetRef="T07_UserDecision"/>
+    <bpmn:messageFlow id="mf_3" name="серая зона: max P &lt; 0,60" sourceRef="G01_Conf" targetRef="T07_UserDecision"/>
+    <bpmn:messageFlow id="mf_4" name="коридор: 0,60 ≤ P2 &lt; 0,80" sourceRef="G02_Clickbait" targetRef="T07_UserDecision"/>
+    <bpmn:messageFlow id="mf_5" name="запись аудита" sourceRef="T04_Normal" targetRef="T09_Audit"/>
+    <bpmn:messageFlow id="mf_6" name="запись аудита" sourceRef="T05_Spam" targetRef="T09_Audit"/>
+    <bpmn:messageFlow id="mf_7" name="запись аудита" sourceRef="T06_Clickbait" targetRef="T09_Audit"/>
+    <bpmn:messageFlow id="mf_8" name="решение человека" sourceRef="T07_UserDecision" targetRef="T09_Audit"/>
+    <bpmn:messageFlow id="mf_9" name="новая метка пользователя" sourceRef="T08_Feedback" targetRef="T09_Audit"/>
+    <bpmn:messageFlow id="mf_10" name="отчёт KPI" sourceRef="T12_Report" targetRef="T13_OwnerDecision"/>
+    <bpmn:messageFlow id="mf_11" name="управленческое решение" sourceRef="T13_OwnerDecision" targetRef="G03_SLA"/>
+    <bpmn:messageFlow id="mf_12" name="цикл: следующее входящее сообщение" sourceRef="T12_Report" targetRef="End_Wait"/>
+    <bpmn:messageFlow id="mf_13" name="цикл мониторинга" sourceRef="G04_Degradation" targetRef="T10_Monitor"/>
+    <bpmn:association id="as_1" sourceRef="T08_Feedback" targetRef="dsr_DS_LABELS" associationDirection="Out"/>
+    <bpmn:association id="as_2" sourceRef="T09_Audit" targetRef="dsr_DS_LOG" associationDirection="Out"/>
+    <bpmn:association id="as_3" sourceRef="T10_Monitor" targetRef="dsr_DS_LABELS" associationDirection="Out"/>
+    <bpmn:association id="as_4" sourceRef="T03_Model" targetRef="AN_Model" associationDirection="Out"/>
+    <bpmn:association id="as_5" sourceRef="T02_Preproc" targetRef="AN_Gap" associationDirection="Out"/>
+    <bpmn:association id="as_6" sourceRef="T01_Receive" targetRef="AN_Privacy" associationDirection="Out"/>
+    <bpmn:association id="as_7" sourceRef="T07_UserDecision" targetRef="AN_HITL" associationDirection="Out"/>
+    <bpmn:association id="as_8" sourceRef="G03_SLA" targetRef="AN_SLA" associationDirection="Out"/>
+    <bpmn:association id="as_9" sourceRef="G01_Conf" targetRef="AN_Calib" associationDirection="Out"/>
+    <bpmn:association id="as_10" sourceRef="G04_Degradation" targetRef="AN_Cycle" associationDirection="Out"/>
+  </bpmn:collaboration>
+  <bpmndi:BPMNDiagram id="BPMNDiagram_Process_Operation">
+    <bpmndi:BPMNPlane id="BPMNPlane_Process_Operation" bpmnElement="Collaboration_Process_Operation">
+      <bpmndi:BPMNShape id="Pool_Operation_di" bpmnElement="Pool_Operation" isHorizontal="true">
+        <dc:Bounds x="40" y="60" width="2640" height="1280" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Lane_App_di" bpmnElement="Lane_App" isHorizontal="true">
+        <dc:Bounds x="40" y="90" width="2640" height="420" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Lane_User_di" bpmnElement="Lane_User" isHorizontal="true">
+        <dc:Bounds x="40" y="510" width="2640" height="190" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Lane_MLOps_di" bpmnElement="Lane_MLOps" isHorizontal="true">
+        <dc:Bounds x="40" y="700" width="2640" height="460" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Lane_Owner_di" bpmnElement="Lane_Owner" isHorizontal="true">
+        <dc:Bounds x="40" y="1160" width="2640" height="180" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Start_Incoming_di" bpmnElement="Start_Incoming" isHorizontal="true">
+        <dc:Bounds x="90" y="240" width="70" height="70" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="T01_Receive_di" bpmnElement="T01_Receive" isHorizontal="true">
+        <dc:Bounds x="200" y="235" width="200" height="60" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="T02_Preproc_di" bpmnElement="T02_Preproc" isHorizontal="true">
+        <dc:Bounds x="440" y="235" width="210" height="60" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="T03_Model_di" bpmnElement="T03_Model" isHorizontal="true">
+        <dc:Bounds x="690" y="230" width="260" height="70" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="DO_ScoringRef_di" bpmnElement="DO_ScoringRef" isHorizontal="true">
+        <dc:Bounds x="990" y="240" width="180" height="50" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="G01_Conf_di" bpmnElement="G01_Conf" isHorizontal="true">
+        <dc:Bounds x="1210" y="225" width="80" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="T04_Normal_di" bpmnElement="T04_Normal" isHorizontal="true">
+        <dc:Bounds x="1340" y="120" width="210" height="55" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="T05_Spam_di" bpmnElement="T05_Spam" isHorizontal="true">
+        <dc:Bounds x="1340" y="340" width="210" height="55" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="G02_Clickbait_di" bpmnElement="G02_Clickbait" isHorizontal="true">
+        <dc:Bounds x="1600" y="330" width="80" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="T06_Clickbait_di" bpmnElement="T06_Clickbait" isHorizontal="true">
+        <dc:Bounds x="1720" y="343" width="230" height="55" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="End_Wait_di" bpmnElement="End_Wait" isHorizontal="true">
+        <dc:Bounds x="2060" y="240" width="70" height="70" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="T07_UserDecision_di" bpmnElement="T07_UserDecision" isHorizontal="true">
+        <dc:Bounds x="1190" y="570" width="290" height="60" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="T08_Feedback_di" bpmnElement="T08_Feedback" isHorizontal="true">
+        <dc:Bounds x="1540" y="570" width="240" height="60" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="SP_Onboard_di" bpmnElement="SP_Onboard" isHorizontal="true">
+        <dc:Bounds x="90" y="750" width="270" height="55" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Start_VersionReady_di" bpmnElement="Start_VersionReady" isHorizontal="true">
+        <dc:Bounds x="400" y="745" width="70" height="70" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="T09_Audit_di" bpmnElement="T09_Audit" isHorizontal="true">
+        <dc:Bounds x="1190" y="760" width="240" height="60" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="T10_Monitor_di" bpmnElement="T10_Monitor" isHorizontal="true">
+        <dc:Bounds x="1470" y="760" width="220" height="60" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="G03_SLA_di" bpmnElement="G03_SLA" isHorizontal="true">
+        <dc:Bounds x="1730" y="765" width="80" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="T12_Report_di" bpmnElement="T12_Report" isHorizontal="true">
+        <dc:Bounds x="1860" y="860" width="220" height="60" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="T11_Incident_di" bpmnElement="T11_Incident" isHorizontal="true">
+        <dc:Bounds x="1860" y="990" width="240" height="60" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="G04_Degradation_di" bpmnElement="G04_Degradation" isHorizontal="true">
+        <dc:Bounds x="2150" y="995" width="80" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="SP_Retrain_di" bpmnElement="SP_Retrain" isHorizontal="true">
+        <dc:Bounds x="2280" y="1005" width="220" height="55" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="End_Process_di" bpmnElement="End_Process" isHorizontal="true">
+        <dc:Bounds x="2520" y="1000" width="70" height="70" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="T13_OwnerDecision_di" bpmnElement="T13_OwnerDecision" isHorizontal="true">
+        <dc:Bounds x="1730" y="1205" width="250" height="60" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="dsr_DS_LOG_di" bpmnElement="dsr_DS_LOG" isHorizontal="true">
+        <dc:Bounds x="110" y="1400" width="50" height="50" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="dsr_DS_LABELS_di" bpmnElement="dsr_DS_LABELS" isHorizontal="true">
+        <dc:Bounds x="260" y="1400" width="50" height="50" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="AN_Model_di" bpmnElement="AN_Model" isHorizontal="true">
+        <dc:Bounds x="620" y="130" width="300" height="45" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="AN_Gap_di" bpmnElement="AN_Gap" isHorizontal="true">
+        <dc:Bounds x="400" y="100" width="320" height="45" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="AN_Privacy_di" bpmnElement="AN_Privacy" isHorizontal="true">
+        <dc:Bounds x="200" y="330" width="300" height="40" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="AN_HITL_di" bpmnElement="AN_HITL" isHorizontal="true">
+        <dc:Bounds x="1190" y="630" width="300" height="40" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="AN_SLA_di" bpmnElement="AN_SLA" isHorizontal="true">
+        <dc:Bounds x="1560" y="880" width="280" height="45" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="AN_Calib_di" bpmnElement="AN_Calib" isHorizontal="true">
+        <dc:Bounds x="1010" y="420" width="280" height="40" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="AN_Cycle_di" bpmnElement="AN_Cycle" isHorizontal="true">
+        <dc:Bounds x="2180" y="1090" width="300" height="40" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNEdge id="sf_1_di" bpmnElement="sf_1">
+        <di:waypoint x="125" y="275" />
+        <di:waypoint x="125" y="257" />
+        <di:waypoint x="300" y="257" />
+        <di:waypoint x="300" y="265" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="sf_2_di" bpmnElement="sf_2">
+        <di:waypoint x="300" y="265" />
+        <di:waypoint x="545" y="265" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="sf_3_di" bpmnElement="sf_3">
+        <di:waypoint x="545" y="265" />
+        <di:waypoint x="820" y="265" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="sf_4_di" bpmnElement="sf_4">
+        <di:waypoint x="820" y="265" />
+        <di:waypoint x="1080" y="265" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="sf_5_di" bpmnElement="sf_5">
+        <di:waypoint x="1080" y="265" />
+        <di:waypoint x="1250" y="265" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="sf_6_di" bpmnElement="sf_6">
+        <di:waypoint x="1250" y="265" />
+        <di:waypoint x="1250" y="220" />
+        <di:waypoint x="1445" y="220" />
+        <di:waypoint x="1445" y="147" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="sf_7_di" bpmnElement="sf_7">
+        <di:waypoint x="1250" y="265" />
+        <di:waypoint x="1250" y="310" />
+        <di:waypoint x="1445" y="310" />
+        <di:waypoint x="1445" y="367" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="sf_8_di" bpmnElement="sf_8">
+        <di:waypoint x="1250" y="265" />
+        <di:waypoint x="1250" y="310" />
+        <di:waypoint x="1640" y="310" />
+        <di:waypoint x="1640" y="370" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="sf_9_di" bpmnElement="sf_9">
+        <di:waypoint x="1640" y="370" />
+        <di:waypoint x="1835" y="370" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="sf_10_di" bpmnElement="sf_10">
+        <di:waypoint x="1445" y="147" />
+        <di:waypoint x="1445" y="192" />
+        <di:waypoint x="2095" y="192" />
+        <di:waypoint x="2095" y="275" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="sf_11_di" bpmnElement="sf_11">
+        <di:waypoint x="1445" y="367" />
+        <di:waypoint x="1445" y="322" />
+        <di:waypoint x="2095" y="322" />
+        <di:waypoint x="2095" y="275" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="sf_12_di" bpmnElement="sf_12">
+        <di:waypoint x="1835" y="370" />
+        <di:waypoint x="1835" y="325" />
+        <di:waypoint x="2095" y="325" />
+        <di:waypoint x="2095" y="275" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="sf_13_di" bpmnElement="sf_13">
+        <di:waypoint x="1335" y="600" />
+        <di:waypoint x="1660" y="600" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="sf_14_di" bpmnElement="sf_14">
+        <di:waypoint x="225" y="777" />
+        <di:waypoint x="225" y="795" />
+        <di:waypoint x="435" y="795" />
+        <di:waypoint x="435" y="780" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="sf_15_di" bpmnElement="sf_15">
+        <di:waypoint x="1310" y="790" />
+        <di:waypoint x="1580" y="790" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="sf_16_di" bpmnElement="sf_16">
+        <di:waypoint x="1580" y="790" />
+        <di:waypoint x="1580" y="808" />
+        <di:waypoint x="1770" y="808" />
+        <di:waypoint x="1770" y="805" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="sf_17_di" bpmnElement="sf_17">
+        <di:waypoint x="1770" y="805" />
+        <di:waypoint x="1770" y="847" />
+        <di:waypoint x="1970" y="847" />
+        <di:waypoint x="1970" y="890" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="sf_18_di" bpmnElement="sf_18">
+        <di:waypoint x="1770" y="805" />
+        <di:waypoint x="1770" y="850" />
+        <di:waypoint x="1980" y="850" />
+        <di:waypoint x="1980" y="1020" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="sf_19_di" bpmnElement="sf_19">
+        <di:waypoint x="1980" y="1020" />
+        <di:waypoint x="1980" y="1038" />
+        <di:waypoint x="2190" y="1038" />
+        <di:waypoint x="2190" y="1035" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="sf_20_di" bpmnElement="sf_20">
+        <di:waypoint x="2190" y="1035" />
+        <di:waypoint x="2190" y="990" />
+        <di:waypoint x="1970" y="990" />
+        <di:waypoint x="1970" y="890" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="sf_21_di" bpmnElement="sf_21">
+        <di:waypoint x="2190" y="1035" />
+        <di:waypoint x="2190" y="1017" />
+        <di:waypoint x="2390" y="1017" />
+        <di:waypoint x="2390" y="1032" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="sf_22_di" bpmnElement="sf_22">
+        <di:waypoint x="2390" y="1032" />
+        <di:waypoint x="2390" y="1050" />
+        <di:waypoint x="2555" y="1050" />
+        <di:waypoint x="2555" y="1035" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="mf_1_di" bpmnElement="mf_1">
+        <di:waypoint x="435" y="780" />
+        <di:waypoint x="435" y="735" />
+        <di:waypoint x="300" y="735" />
+        <di:waypoint x="300" y="265" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="mf_2_di" bpmnElement="mf_2">
+        <di:waypoint x="1080" y="265" />
+        <di:waypoint x="1080" y="310" />
+        <di:waypoint x="1335" y="310" />
+        <di:waypoint x="1335" y="600" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="mf_3_di" bpmnElement="mf_3">
+        <di:waypoint x="1250" y="265" />
+        <di:waypoint x="1250" y="310" />
+        <di:waypoint x="1335" y="310" />
+        <di:waypoint x="1335" y="600" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="mf_4_di" bpmnElement="mf_4">
+        <di:waypoint x="1640" y="370" />
+        <di:waypoint x="1640" y="415" />
+        <di:waypoint x="1335" y="415" />
+        <di:waypoint x="1335" y="600" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="mf_5_di" bpmnElement="mf_5">
+        <di:waypoint x="1445" y="147" />
+        <di:waypoint x="1445" y="192" />
+        <di:waypoint x="1310" y="192" />
+        <di:waypoint x="1310" y="790" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="mf_6_di" bpmnElement="mf_6">
+        <di:waypoint x="1445" y="367" />
+        <di:waypoint x="1445" y="412" />
+        <di:waypoint x="1310" y="412" />
+        <di:waypoint x="1310" y="790" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="mf_7_di" bpmnElement="mf_7">
+        <di:waypoint x="1835" y="370" />
+        <di:waypoint x="1835" y="415" />
+        <di:waypoint x="1310" y="415" />
+        <di:waypoint x="1310" y="790" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="mf_8_di" bpmnElement="mf_8">
+        <di:waypoint x="1335" y="600" />
+        <di:waypoint x="1335" y="645" />
+        <di:waypoint x="1310" y="645" />
+        <di:waypoint x="1310" y="790" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="mf_9_di" bpmnElement="mf_9">
+        <di:waypoint x="1660" y="600" />
+        <di:waypoint x="1660" y="645" />
+        <di:waypoint x="1310" y="645" />
+        <di:waypoint x="1310" y="790" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="mf_10_di" bpmnElement="mf_10">
+        <di:waypoint x="1970" y="890" />
+        <di:waypoint x="1970" y="935" />
+        <di:waypoint x="1855" y="935" />
+        <di:waypoint x="1855" y="1235" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="mf_11_di" bpmnElement="mf_11">
+        <di:waypoint x="1855" y="1235" />
+        <di:waypoint x="1855" y="1190" />
+        <di:waypoint x="1770" y="1190" />
+        <di:waypoint x="1770" y="805" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="mf_12_di" bpmnElement="mf_12">
+        <di:waypoint x="1970" y="890" />
+        <di:waypoint x="1970" y="845" />
+        <di:waypoint x="2095" y="845" />
+        <di:waypoint x="2095" y="275" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="mf_13_di" bpmnElement="mf_13">
+        <di:waypoint x="2190" y="1035" />
+        <di:waypoint x="2190" y="990" />
+        <di:waypoint x="1580" y="990" />
+        <di:waypoint x="1580" y="790" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="as_4_di" bpmnElement="as_4">
+        <di:waypoint x="820" y="265" />
+        <di:waypoint x="820" y="220" />
+        <di:waypoint x="770" y="220" />
+        <di:waypoint x="770" y="152" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="as_5_di" bpmnElement="as_5">
+        <di:waypoint x="545" y="265" />
+        <di:waypoint x="545" y="220" />
+        <di:waypoint x="560" y="220" />
+        <di:waypoint x="560" y="122" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="as_6_di" bpmnElement="as_6">
+        <di:waypoint x="300" y="265" />
+        <di:waypoint x="300" y="307" />
+        <di:waypoint x="350" y="307" />
+        <di:waypoint x="350" y="350" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="as_7_di" bpmnElement="as_7">
+        <di:waypoint x="1335" y="600" />
+        <di:waypoint x="1335" y="625" />
+        <di:waypoint x="1340" y="625" />
+        <di:waypoint x="1340" y="650" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="as_8_di" bpmnElement="as_8">
+        <di:waypoint x="1770" y="805" />
+        <di:waypoint x="1770" y="850" />
+        <di:waypoint x="1700" y="850" />
+        <di:waypoint x="1700" y="902" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="as_9_di" bpmnElement="as_9">
+        <di:waypoint x="1250" y="265" />
+        <di:waypoint x="1250" y="310" />
+        <di:waypoint x="1150" y="310" />
+        <di:waypoint x="1150" y="440" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="as_10_di" bpmnElement="as_10">
+        <di:waypoint x="2190" y="1035" />
+        <di:waypoint x="2190" y="1072" />
+        <di:waypoint x="2330" y="1072" />
+        <di:waypoint x="2330" y="1110" />
+      </bpmndi:BPMNEdge>
+    </bpmndi:BPMNPlane>
+  </bpmndi:BPMNDiagram>
+</bpmn:definitions>

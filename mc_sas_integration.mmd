@@ -1,0 +1,41 @@
+%% ======================================================================
+%% Файл: mc_sas_integration.mmd
+%% Источник истины: model_card.md (блок ```mermaid)
+%% Рендеринг: GitHub / GitLab / VS Code / Typora / mermaid-cli
+%% ======================================================================
+
+flowchart LR
+    classDef dev fill:#F3E5F5,stroke:#6A1B9A,stroke-width:2px,color:#4A148C
+    classDef sas fill:#E3F2FD,stroke:#1565C0,stroke-width:2px,color:#0d47a1
+    classDef biz fill:#E8F5E9,stroke:#2E7D32,stroke-width:2px,color:#1b5e20
+
+    subgraph DEV["Шаг 0. Разработка (команда данных)"]
+        direction LR
+        J["Jupyter: ноутбук model.ipynb<br/>обучение и метрики"]:::dev
+        GIT["Git: версионирование кода<br/>и датасета df.csv v1"]:::dev
+        CICD["CI/CD: авто-прогон обучения,<br/>пересчёт метрик, тесты"]:::dev
+        J --> GIT --> CICD
+    end
+
+    subgraph SAS["Платформа SAS"]
+        direction LR
+        MM["РЕГИСТРАЦИЯ:<br/>SAS Model Manager —<br/>паспорт модели v1.0 + Model Card"]:::sas
+        WM["АВТОПРОВЕРКА + СОГЛАСОВАНИЕ:<br/>SAS Workflow Manager —<br/>валидация метрик, подпись бизнеса"]:::sas
+        MAS["ДЕПЛОЙ:<br/>экспорт артефакта в приложение<br/>(ONNX/Core ML) + canary"]:::sas
+        MON["МОНИТОРИНГ:<br/>SAS Model Monitor —<br/>дрейф, качество, SLA, алерты"]:::sas
+        MM --> WM --> MAS --> MON
+    end
+
+    subgraph BIZ["Бизнес-контур (приложение и пользователи)"]
+        direction LR
+        APP["Приложение:<br/>инференс на устройстве,<br/>уведомления и метки"]:::biz
+        FB["Метки пользователя<br/>(контрольная выборка)"]:::biz
+        REP["Отчёты владельцу продукта"]:::biz
+        RET["Workflow «Переобучение»<br/>(Model_retrain_BPMN.md)"]:::biz
+        APP --> FB --> MON
+        MON --> REP
+        MON -- "сигнал деградации" --> RET
+    end
+
+    CICD -- "артефакты: пайплайн, метрики" --> MM
+    MAS --> APP

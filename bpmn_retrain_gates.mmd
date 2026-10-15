@@ -1,0 +1,41 @@
+%% ======================================================================
+%% Файл: bpmn_retrain_gates.mmd
+%% Источник истины: Model_retrain_BPMN.md (блок ```mermaid)
+%% Рендеринг: GitHub / GitLab / VS Code / Typora / mermaid-cli
+%% ======================================================================
+
+flowchart LR
+    classDef svc fill:#E3F2FD,stroke:#1565C0,stroke-width:2px,color:#0d47a1
+    classDef gate fill:#FFF8E1,stroke:#F9A825,stroke-width:2px,color:#e65100
+    classDef usr fill:#E8F5E9,stroke:#2E7D32,stroke-width:2px,color:#1b5e20
+    classDef fail fill:#FFEBEE,stroke:#C62828,stroke-width:2px,color:#b71c1c
+    classDef ok fill:#E8F5E9,stroke:#2E7D32,stroke-width:2px,color:#1b5e20
+
+    R06[/"R06 Валидация данных"/]:::svc
+    G6{"✕ G06 Данные пригодны?"}:::gate
+    R05[/"R05 Досылка данных"/]:::svc
+    R09[/"R09 Авто-валидация challenger"/]:::svc
+    G7{"✕ G07 Не хуже чемпиона?"}:::gate
+    G8{"✕ G08 Попыток не больше 3?"}:::gate
+    R12[/"R12 Валидация аналитиком"/]:::usr
+    G9{"✕ G09 Не хуже на живом трафике?"}:::gate
+    R14[/"R14 Согласование бизнеса и риска"/]:::usr
+    R15[/"R15 Регистрация и деплой"/]:::svc
+    STOP1[/"■ Отказ: заявка архивируется"/]:::fail
+    STOP2[/"■ Пауза цикла: нужен разбор причины"/]:::fail
+    BACK[/"R10 Анализ причин и доработка"/]:::svc
+    OKV[/"Версия v(N+1) разрешена к публикации"/]:::ok
+
+    R06 --> G6
+    G6 -->|"нет"| R05 --> R06
+    G6 -->|"да"| R09 --> G7
+    G7 -->|"нет"| BACK --> G8
+    G7 -->|"да"| G8
+    G8 -->|"нет · попыток больше 3"| STOP2
+    G8 -->|"да"| R12
+    R12 -->|"отклонил"| BACK
+    R12 -->|"одобрил"| G9
+    G9 -->|"нет"| STOP1
+    G9 -->|"да"| R14
+    R14 -->|"отклонил"| STOP1
+    R14 -->|"одобрил"| R15 --> OKV

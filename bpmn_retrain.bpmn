@@ -1,0 +1,443 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL" xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI" xmlns:dc="http://www.omg.org/spec/DD/20100524/DC" xmlns:di="http://www.omg.org/spec/DD/20100524/DI" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" id="Definitions_Process_Retrain" targetNamespace="http://bpmn.io/schema/bpmn" exporter="OpenCode" exporterVersion="1.0">
+  <bpmn:dataStore id="DS_DATA" name="DS_DATA · df.csv v(N+1), версия в Git"/>
+  <bpmn:dataStore id="DS_METRICS" name="DS_METRICS · метрики challenger и champion"/>
+  <bpmn:dataStore id="DS_REGISTRY" name="DS_REGISTRY · реестр версий SAS Model Manager"/>
+  <bpmn:dataStore id="DS_LABELS" name="DS_LABELS · метки пользователей — ground truth"/>
+  <bpmn:process id="Process_Retrain" name="Автоматическое переобучение модели spam_clickbait_classifier_ru: v(N) → v(N+1)" isExecutable="false">
+    <bpmn:laneSet id="LaneSet_Process_Retrain">
+      <bpmn:lane id="Lane_Monitor" name="L1 · Мониторинг и триггеры (MLOps)">
+        <bpmn:flowNodeRef>R01_Trigger</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>R02_Request</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>G05_Worth</bpmn:flowNodeRef>
+      </bpmn:lane>
+      <bpmn:lane id="Lane_Owner" name="L2 · Бизнес-владелец — согласования (human-in-the-loop)">
+        <bpmn:flowNodeRef>R03_Reject</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>End_Reject</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>R04_ApprovePlan</bpmn:flowNodeRef>
+      </bpmn:lane>
+      <bpmn:lane id="Lane_Data" name="L3 · Команда данных">
+        <bpmn:flowNodeRef>R05_CollectData</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>R06_ValidateData</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>G06_DataOk</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>R07_Split</bpmn:flowNodeRef>
+      </bpmn:lane>
+      <bpmn:lane id="Lane_DS" name="L4 · DS-команда — обучение, валидация, итерации">
+        <bpmn:flowNodeRef>R08_Train</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>R09_AutoVal</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>G07_QualityGates</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>R10_Analyse</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>G08_Calib</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>R11_Pause</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>End_Pause</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>R12_AnalystValidate</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>R13_Shadow</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>G09_ShadowOk</bpmn:flowNodeRef>
+      </bpmn:lane>
+      <bpmn:lane id="Lane_MLOps" name="L5 · MLOps — регистрация, деплой, контроль">
+        <bpmn:flowNodeRef>R14_ApproveDeploy</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>R15_Register</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>R16_Deploy</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>R17_Monitor</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>End_InProd</bpmn:flowNodeRef>
+      </bpmn:lane>
+    </bpmn:laneSet>
+    <bpmn:dataStoreReference id="dsr_DS_DATA" dataStoreRef="DS_DATA"/>
+    <bpmn:dataStoreReference id="dsr_DS_METRICS" dataStoreRef="DS_METRICS"/>
+    <bpmn:dataStoreReference id="dsr_DS_REGISTRY" dataStoreRef="DS_REGISTRY"/>
+    <bpmn:dataStoreReference id="dsr_DS_LABELS" dataStoreRef="DS_LABELS"/>
+    <bpmn:startEvent id="R01_Trigger" name="R01 ТРИГГЕР: G04 эксплуатации · падение SLA · PSI &gt; 0,2 · 10 000 меток · плановый цикл 6 мес · новый тип спама · набор транскриптов"/>
+    <bpmn:serviceTask id="R02_Request" name="R02 Заявка на переобучение: метрики деградации, гипотеза причины, ожидаемый эффект, нужный объём данных, уведомление владельцу"/>
+    <bpmn:exclusiveGateway id="G05_Worth" name="G05 Целесообразно переобучение? Эффект выше затрат, риск приемлем"/>
+    <bpmn:serviceTask id="R03_Reject" name="R03 Отклонить заявку, архивировать с причиной, уведомить автора"/>
+    <bpmn:endEvent id="End_Reject" name="Процесс завершён: модель не меняется"/>
+    <bpmn:userTask id="R04_ApprovePlan" name="R04 Утверждение объёма, сроков и SLA новой версии (бизнес-владелец, SLA 24 ч)"/>
+    <bpmn:serviceTask id="R05_CollectData" name="R05 Сбор и версионирование данных df.csv v(N+1): v1 + метки пользователей + транскрипты голосовых + свежая разметка"/>
+    <bpmn:serviceTask id="R06_ValidateData" name="R06 Валидация данных: дубликаты, баланс, пустые после очистки, двойная разметка, наличие даты и канала"/>
+    <bpmn:exclusiveGateway id="G06_DataOk" name="G06 Данные пригодны? Объём, баланс, качество меток"/>
+    <bpmn:serviceTask id="R07_Split" name="R07 Разбиение train/test 80/20, stratify, seed 42 + временной разрез; версия датасета в Git"/>
+    <bpmn:serviceTask id="R08_Train" name="R08 Обучение challenger: clean_text → TF-IDF word 1-2 + char_wb 3-5 → LogReg, GridSearch C по f1_weighted (StratifiedKFold 3) + калибровка вероятностей"/>
+    <bpmn:serviceTask id="R09_AutoVal" name="R09 Авто-валидация на отложенном Test: метрики по классам, ROC-AUC, матрица ошибок, доли авто-решений при 0,60 / 0,80"/>
+    <bpmn:exclusiveGateway id="G07_QualityGates" name="G07 QUALITY GATES — аукцион challenger vs champion: F1w ≥ 0,9455 · F1 кликбейта ≥ 0,8823 · Recall обычных ≥ 0,9522 · Recall спама ≥ 0,9632 · авто-решений ≥ 85 %"/>
+    <bpmn:serviceTask id="R10_Analyse" name="R10 Анализ причин и доработка: фичи, баланс, разметка, пороги; новая гипотеза"/>
+    <bpmn:exclusiveGateway id="G08_Calib" name="G08 Калитровочный шлюз: попыток подряд не больше 3?"/>
+    <bpmn:userTask id="R11_Pause" name="R11 ПАУЗА ЦИКЛА: «Требуется анализ причины дрейфа», уведомление владельцу и DS-лиду"/>
+    <bpmn:endEvent id="End_Pause" name="Цикл приостановлен: нужен разбор, а не новая итерация"/>
+    <bpmn:userTask id="R12_AnalystValidate" name="R12 Валидация аналитиком: форма с описанием, метриками и кнопками «Одобрить» / «Отклонить с комментарием»; роль model_validator, SLA 24 ч"/>
+    <bpmn:serviceTask id="R13_Shadow" name="R13 Теневой (shadow) тест 1–2 недели: challenger считает параллельно с чемпионом, решения не применяются"/>
+    <bpmn:exclusiveGateway id="G09_ShadowOk" name="G09 На живом трафике challenger не хуже чемпиона и SLA бизнеса соблюдены?"/>
+    <bpmn:userTask id="R14_ApproveDeploy" name="R14 Согласование деплоя: бизнес-владелец + риск-функция, подписи и комментарий, SLA 24 ч"/>
+    <bpmn:serviceTask id="R15_Register" name="R15 Регистрация версии v(N+1) в SAS Model Manager: паспорт + ОБНОВЛЁННАЯ MODEL CARD, артефакт, хэш кода, кто согласовал"/>
+    <bpmn:serviceTask id="R16_Deploy" name="R16 ДЕПЛОЙ: canary 10 % → 100 %, экспорт артефакта в приложение, уведомление «Модель v(N+1) в продакшене»"/>
+    <bpmn:serviceTask id="R17_Monitor" name="R17 Усиленный мониторинг 14 дней: ежедневные отчёты, жёсткие пороги, готовность к откату"/>
+    <bpmn:endEvent id="End_InProd" name="Модель v(N+1) в эксплуатации — возврат в BPMN «Эксплуатация»"/>
+    <bpmn:sequenceFlow id="sf_1" sourceRef="R01_Trigger" targetRef="R02_Request"/>
+    <bpmn:sequenceFlow id="sf_2" sourceRef="R02_Request" targetRef="G05_Worth"/>
+    <bpmn:sequenceFlow id="sf_3" sourceRef="G05_Worth" targetRef="R03_Reject"><bpmn:conditionExpression xsi:type="bpmn:tFormalExpression">нет: эффект не выше затрат</bpmn:conditionExpression></bpmn:sequenceFlow>
+    <bpmn:sequenceFlow id="sf_4" sourceRef="G05_Worth" targetRef="R04_ApprovePlan"><bpmn:conditionExpression xsi:type="bpmn:tFormalExpression">да</bpmn:conditionExpression></bpmn:sequenceFlow>
+    <bpmn:sequenceFlow id="sf_5" sourceRef="R03_Reject" targetRef="End_Reject"/>
+    <bpmn:sequenceFlow id="sf_6" sourceRef="R04_ApprovePlan" targetRef="R05_CollectData"/>
+    <bpmn:sequenceFlow id="sf_7" sourceRef="R05_CollectData" targetRef="R06_ValidateData"/>
+    <bpmn:sequenceFlow id="sf_8" sourceRef="R06_ValidateData" targetRef="G06_DataOk"/>
+    <bpmn:sequenceFlow id="sf_9" sourceRef="G06_DataOk" targetRef="R05_CollectData"><bpmn:conditionExpression xsi:type="bpmn:tFormalExpression">нет: досылка данных</bpmn:conditionExpression></bpmn:sequenceFlow>
+    <bpmn:sequenceFlow id="sf_10" sourceRef="G06_DataOk" targetRef="R07_Split"><bpmn:conditionExpression xsi:type="bpmn:tFormalExpression">да</bpmn:conditionExpression></bpmn:sequenceFlow>
+    <bpmn:sequenceFlow id="sf_11" sourceRef="R07_Split" targetRef="R08_Train"/>
+    <bpmn:sequenceFlow id="sf_12" sourceRef="R08_Train" targetRef="R09_AutoVal"/>
+    <bpmn:sequenceFlow id="sf_13" sourceRef="R09_AutoVal" targetRef="G07_QualityGates"/>
+    <bpmn:sequenceFlow id="sf_14" sourceRef="G07_QualityGates" targetRef="R10_Analyse"><bpmn:conditionExpression xsi:type="bpmn:tFormalExpression">нет: challenger хуже чемпиона</bpmn:conditionExpression></bpmn:sequenceFlow>
+    <bpmn:sequenceFlow id="sf_15" sourceRef="G07_QualityGates" targetRef="G08_Calib"><bpmn:conditionExpression xsi:type="bpmn:tFormalExpression">да</bpmn:conditionExpression></bpmn:sequenceFlow>
+    <bpmn:sequenceFlow id="sf_16" sourceRef="R10_Analyse" targetRef="R08_Train"/>
+    <bpmn:sequenceFlow id="sf_17" sourceRef="R10_Analyse" targetRef="G08_Calib"/>
+    <bpmn:sequenceFlow id="sf_18" sourceRef="G08_Calib" targetRef="R11_Pause"><bpmn:conditionExpression xsi:type="bpmn:tFormalExpression">нет: попыток больше 3</bpmn:conditionExpression></bpmn:sequenceFlow>
+    <bpmn:sequenceFlow id="sf_19" sourceRef="G08_Calib" targetRef="R12_AnalystValidate"><bpmn:conditionExpression xsi:type="bpmn:tFormalExpression">да</bpmn:conditionExpression></bpmn:sequenceFlow>
+    <bpmn:sequenceFlow id="sf_20" sourceRef="R11_Pause" targetRef="End_Pause"/>
+    <bpmn:sequenceFlow id="sf_21" sourceRef="R12_AnalystValidate" targetRef="R10_Analyse"><bpmn:conditionExpression xsi:type="bpmn:tFormalExpression">отклонил</bpmn:conditionExpression></bpmn:sequenceFlow>
+    <bpmn:sequenceFlow id="sf_22" sourceRef="R12_AnalystValidate" targetRef="R13_Shadow"><bpmn:conditionExpression xsi:type="bpmn:tFormalExpression">одобрил</bpmn:conditionExpression></bpmn:sequenceFlow>
+    <bpmn:sequenceFlow id="sf_23" sourceRef="R13_Shadow" targetRef="G09_ShadowOk"/>
+    <bpmn:sequenceFlow id="sf_24" sourceRef="G09_ShadowOk" targetRef="R03_Reject"><bpmn:conditionExpression xsi:type="bpmn:tFormalExpression">нет: shadow показал ухудшение</bpmn:conditionExpression></bpmn:sequenceFlow>
+    <bpmn:sequenceFlow id="sf_25" sourceRef="G09_ShadowOk" targetRef="R14_ApproveDeploy"><bpmn:conditionExpression xsi:type="bpmn:tFormalExpression">да</bpmn:conditionExpression></bpmn:sequenceFlow>
+    <bpmn:sequenceFlow id="sf_26" sourceRef="R14_ApproveDeploy" targetRef="R03_Reject"><bpmn:conditionExpression xsi:type="bpmn:tFormalExpression">отклонил</bpmn:conditionExpression></bpmn:sequenceFlow>
+    <bpmn:sequenceFlow id="sf_27" sourceRef="R14_ApproveDeploy" targetRef="R15_Register"><bpmn:conditionExpression xsi:type="bpmn:tFormalExpression">одобрил</bpmn:conditionExpression></bpmn:sequenceFlow>
+    <bpmn:sequenceFlow id="sf_28" sourceRef="R15_Register" targetRef="R16_Deploy"/>
+    <bpmn:sequenceFlow id="sf_29" sourceRef="R16_Deploy" targetRef="R17_Monitor"/>
+    <bpmn:sequenceFlow id="sf_30" sourceRef="R17_Monitor" targetRef="End_InProd"/>
+    <bpmn:textAnnotation id="AN_Trig"><bpmn:text>Триггеры: G04 эксплуатации · PSI &gt; 0,2 · F1w &lt; 0,92 или F1 кликбейта &lt; 0,85 или ошибка на обычных &gt; 6 % · 10 000 меток · 6 месяцев · новый тип спама · набор 5 000 транскриптов</bpmn:text></bpmn:textAnnotation>
+    <bpmn:textAnnotation id="AN_Gates"><bpmn:text>Правило публикации: новая версия не хуже чемпиона ни по одному обязательному показателю</bpmn:text></bpmn:textAnnotation>
+    <bpmn:textAnnotation id="AN_Loop"><bpmn:text>Защита от бесконечного цикла: максимум 3 попытки подряд, далее пауза и человеческий разбор (слайд 17 презентации)</bpmn:text></bpmn:textAnnotation>
+    <bpmn:textAnnotation id="AN_Shadow"><bpmn:text>Shadow-тест: challenger считает, но решения не применяются — риск для бизнеса равен нулю</bpmn:text></bpmn:textAnnotation>
+    <bpmn:textAnnotation id="AN_Card"><bpmn:text>Новая версия не регистрируется без обновлённой Model Card (Governance)</bpmn:text></bpmn:textAnnotation>
+    <bpmn:textAnnotation id="AN_Notify"><bpmn:text>Уведомления: Teams / Telegram / email, SLA согласования 24 ч, эскалация руководителю DS-лида</bpmn:text></bpmn:textAnnotation>
+  </bpmn:process>
+  <bpmn:collaboration id="Collaboration_Process_Retrain">
+    <bpmn:participant id="Pool_Retrain" name="Процесс переобучения модели (от триггера до публикации новой версии)" processRef="Process_Retrain"/>
+    <bpmn:association id="as_1" sourceRef="R05_CollectData" targetRef="dsr_DS_DATA" associationDirection="Out"/>
+    <bpmn:association id="as_2" sourceRef="dsr_DS_DATA" targetRef="R07_Split" associationDirection="Out"/>
+    <bpmn:association id="as_3" sourceRef="R09_AutoVal" targetRef="dsr_DS_METRICS" associationDirection="Out"/>
+    <bpmn:association id="as_4" sourceRef="dsr_DS_METRICS" targetRef="G07_QualityGates" associationDirection="Out"/>
+    <bpmn:association id="as_5" sourceRef="R15_Register" targetRef="dsr_DS_REGISTRY" associationDirection="Out"/>
+    <bpmn:association id="as_6" sourceRef="R05_CollectData" targetRef="dsr_DS_LABELS" associationDirection="Out"/>
+    <bpmn:association id="as_7" sourceRef="R01_Trigger" targetRef="AN_Trig" associationDirection="Out"/>
+    <bpmn:association id="as_8" sourceRef="G07_QualityGates" targetRef="AN_Gates" associationDirection="Out"/>
+    <bpmn:association id="as_9" sourceRef="G08_Calib" targetRef="AN_Loop" associationDirection="Out"/>
+    <bpmn:association id="as_10" sourceRef="R13_Shadow" targetRef="AN_Shadow" associationDirection="Out"/>
+    <bpmn:association id="as_11" sourceRef="R15_Register" targetRef="AN_Card" associationDirection="Out"/>
+    <bpmn:association id="as_12" sourceRef="R04_ApprovePlan" targetRef="AN_Notify" associationDirection="Out"/>
+  </bpmn:collaboration>
+  <bpmndi:BPMNDiagram id="BPMNDiagram_Process_Retrain">
+    <bpmndi:BPMNPlane id="BPMNPlane_Process_Retrain" bpmnElement="Collaboration_Process_Retrain">
+      <bpmndi:BPMNShape id="Pool_Retrain_di" bpmnElement="Pool_Retrain" isHorizontal="true">
+        <dc:Bounds x="40" y="60" width="2640" height="1280" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Lane_Monitor_di" bpmnElement="Lane_Monitor" isHorizontal="true">
+        <dc:Bounds x="40" y="90" width="2640" height="190" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Lane_Owner_di" bpmnElement="Lane_Owner" isHorizontal="true">
+        <dc:Bounds x="40" y="280" width="2640" height="190" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Lane_Data_di" bpmnElement="Lane_Data" isHorizontal="true">
+        <dc:Bounds x="40" y="470" width="2640" height="230" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Lane_DS_di" bpmnElement="Lane_DS" isHorizontal="true">
+        <dc:Bounds x="40" y="700" width="2640" height="420" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Lane_MLOps_di" bpmnElement="Lane_MLOps" isHorizontal="true">
+        <dc:Bounds x="40" y="1120" width="2640" height="220" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="R01_Trigger_di" bpmnElement="R01_Trigger" isHorizontal="true">
+        <dc:Bounds x="90" y="140" width="90" height="90" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="R02_Request_di" bpmnElement="R02_Request" isHorizontal="true">
+        <dc:Bounds x="220" y="155" width="270" height="60" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="G05_Worth_di" bpmnElement="G05_Worth" isHorizontal="true">
+        <dc:Bounds x="540" y="140" width="90" height="90" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="R03_Reject_di" bpmnElement="R03_Reject" isHorizontal="true">
+        <dc:Bounds x="560" y="325" width="240" height="60" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="End_Reject_di" bpmnElement="End_Reject" isHorizontal="true">
+        <dc:Bounds x="850" y="330" width="70" height="70" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="R04_ApprovePlan_di" bpmnElement="R04_ApprovePlan" isHorizontal="true">
+        <dc:Bounds x="850" y="320" width="270" height="70" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="R05_CollectData_di" bpmnElement="R05_CollectData" isHorizontal="true">
+        <dc:Bounds x="90" y="520" width="310" height="70" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="R06_ValidateData_di" bpmnElement="R06_ValidateData" isHorizontal="true">
+        <dc:Bounds x="440" y="520" width="300" height="70" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="G06_DataOk_di" bpmnElement="G06_DataOk" isHorizontal="true">
+        <dc:Bounds x="780" y="515" width="90" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="R07_Split_di" bpmnElement="R07_Split" isHorizontal="true">
+        <dc:Bounds x="910" y="520" width="270" height="70" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="R08_Train_di" bpmnElement="R08_Train" isHorizontal="true">
+        <dc:Bounds x="90" y="750" width="340" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="R09_AutoVal_di" bpmnElement="R09_AutoVal" isHorizontal="true">
+        <dc:Bounds x="470" y="750" width="310" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="G07_QualityGates_di" bpmnElement="G07_QualityGates" isHorizontal="true">
+        <dc:Bounds x="820" y="745" width="110" height="90" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="R10_Analyse_di" bpmnElement="R10_Analyse" isHorizontal="true">
+        <dc:Bounds x="820" y="990" width="260" height="60" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="G08_Calib_di" bpmnElement="G08_Calib" isHorizontal="true">
+        <dc:Bounds x="1120" y="980" width="90" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="R11_Pause_di" bpmnElement="R11_Pause" isHorizontal="true">
+        <dc:Bounds x="1270" y="975" width="270" height="70" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="End_Pause_di" bpmnElement="End_Pause" isHorizontal="true">
+        <dc:Bounds x="1600" y="980" width="70" height="70" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="R12_AnalystValidate_di" bpmnElement="R12_AnalystValidate" isHorizontal="true">
+        <dc:Bounds x="1270" y="800" width="280" height="70" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="R13_Shadow_di" bpmnElement="R13_Shadow" isHorizontal="true">
+        <dc:Bounds x="1590" y="800" width="290" height="70" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="G09_ShadowOk_di" bpmnElement="G09_ShadowOk" isHorizontal="true">
+        <dc:Bounds x="1920" y="795" width="110" height="90" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="R14_ApproveDeploy_di" bpmnElement="R14_ApproveDeploy" isHorizontal="true">
+        <dc:Bounds x="1290" y="1160" width="280" height="70" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="R15_Register_di" bpmnElement="R15_Register" isHorizontal="true">
+        <dc:Bounds x="1620" y="1160" width="300" height="70" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="R16_Deploy_di" bpmnElement="R16_Deploy" isHorizontal="true">
+        <dc:Bounds x="1960" y="1160" width="290" height="70" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="R17_Monitor_di" bpmnElement="R17_Monitor" isHorizontal="true">
+        <dc:Bounds x="2290" y="1160" width="270" height="70" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="End_InProd_di" bpmnElement="End_InProd" isHorizontal="true">
+        <dc:Bounds x="2290" y="1270" width="90" height="90" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="dsr_DS_DATA_di" bpmnElement="dsr_DS_DATA" isHorizontal="true">
+        <dc:Bounds x="110" y="1420" width="50" height="50" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="dsr_DS_METRICS_di" bpmnElement="dsr_DS_METRICS" isHorizontal="true">
+        <dc:Bounds x="300" y="1420" width="50" height="50" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="dsr_DS_REGISTRY_di" bpmnElement="dsr_DS_REGISTRY" isHorizontal="true">
+        <dc:Bounds x="490" y="1420" width="50" height="50" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="dsr_DS_LABELS_di" bpmnElement="dsr_DS_LABELS" isHorizontal="true">
+        <dc:Bounds x="680" y="1420" width="50" height="50" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="AN_Trig_di" bpmnElement="AN_Trig" isHorizontal="true">
+        <dc:Bounds x="660" y="90" width="440" height="55" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="AN_Gates_di" bpmnElement="AN_Gates" isHorizontal="true">
+        <dc:Bounds x="980" y="700" width="380" height="45" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="AN_Loop_di" bpmnElement="AN_Loop" isHorizontal="true">
+        <dc:Bounds x="1230" y="920" width="390" height="45" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="AN_Shadow_di" bpmnElement="AN_Shadow" isHorizontal="true">
+        <dc:Bounds x="1620" y="880" width="360" height="45" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="AN_Card_di" bpmnElement="AN_Card" isHorizontal="true">
+        <dc:Bounds x="1600" y="1240" width="360" height="45" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="AN_Notify_di" bpmnElement="AN_Notify" isHorizontal="true">
+        <dc:Bounds x="1290" y="300" width="400" height="45" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNEdge id="sf_1_di" bpmnElement="sf_1">
+        <di:waypoint x="135" y="185" />
+        <di:waypoint x="355" y="185" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="sf_2_di" bpmnElement="sf_2">
+        <di:waypoint x="355" y="185" />
+        <di:waypoint x="585" y="185" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="sf_3_di" bpmnElement="sf_3">
+        <di:waypoint x="585" y="185" />
+        <di:waypoint x="585" y="230" />
+        <di:waypoint x="680" y="230" />
+        <di:waypoint x="680" y="355" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="sf_4_di" bpmnElement="sf_4">
+        <di:waypoint x="585" y="185" />
+        <di:waypoint x="585" y="230" />
+        <di:waypoint x="985" y="230" />
+        <di:waypoint x="985" y="355" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="sf_5_di" bpmnElement="sf_5">
+        <di:waypoint x="680" y="355" />
+        <di:waypoint x="680" y="373" />
+        <di:waypoint x="885" y="373" />
+        <di:waypoint x="885" y="365" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="sf_6_di" bpmnElement="sf_6">
+        <di:waypoint x="985" y="355" />
+        <di:waypoint x="985" y="400" />
+        <di:waypoint x="245" y="400" />
+        <di:waypoint x="245" y="555" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="sf_7_di" bpmnElement="sf_7">
+        <di:waypoint x="245" y="555" />
+        <di:waypoint x="590" y="555" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="sf_8_di" bpmnElement="sf_8">
+        <di:waypoint x="590" y="555" />
+        <di:waypoint x="825" y="555" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="sf_9_di" bpmnElement="sf_9">
+        <di:waypoint x="825" y="555" />
+        <di:waypoint x="245" y="555" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="sf_10_di" bpmnElement="sf_10">
+        <di:waypoint x="825" y="555" />
+        <di:waypoint x="1045" y="555" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="sf_11_di" bpmnElement="sf_11">
+        <di:waypoint x="1045" y="555" />
+        <di:waypoint x="1045" y="600" />
+        <di:waypoint x="260" y="600" />
+        <di:waypoint x="260" y="790" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="sf_12_di" bpmnElement="sf_12">
+        <di:waypoint x="260" y="790" />
+        <di:waypoint x="625" y="790" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="sf_13_di" bpmnElement="sf_13">
+        <di:waypoint x="625" y="790" />
+        <di:waypoint x="875" y="790" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="sf_14_di" bpmnElement="sf_14">
+        <di:waypoint x="875" y="790" />
+        <di:waypoint x="875" y="835" />
+        <di:waypoint x="950" y="835" />
+        <di:waypoint x="950" y="1020" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="sf_15_di" bpmnElement="sf_15">
+        <di:waypoint x="875" y="790" />
+        <di:waypoint x="875" y="835" />
+        <di:waypoint x="1165" y="835" />
+        <di:waypoint x="1165" y="1020" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="sf_16_di" bpmnElement="sf_16">
+        <di:waypoint x="950" y="1020" />
+        <di:waypoint x="950" y="975" />
+        <di:waypoint x="260" y="975" />
+        <di:waypoint x="260" y="790" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="sf_17_di" bpmnElement="sf_17">
+        <di:waypoint x="950" y="1020" />
+        <di:waypoint x="1165" y="1020" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="sf_18_di" bpmnElement="sf_18">
+        <di:waypoint x="1165" y="1020" />
+        <di:waypoint x="1165" y="1002" />
+        <di:waypoint x="1405" y="1002" />
+        <di:waypoint x="1405" y="1010" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="sf_19_di" bpmnElement="sf_19">
+        <di:waypoint x="1165" y="1020" />
+        <di:waypoint x="1165" y="975" />
+        <di:waypoint x="1410" y="975" />
+        <di:waypoint x="1410" y="835" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="sf_20_di" bpmnElement="sf_20">
+        <di:waypoint x="1405" y="1010" />
+        <di:waypoint x="1405" y="1028" />
+        <di:waypoint x="1635" y="1028" />
+        <di:waypoint x="1635" y="1015" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="sf_21_di" bpmnElement="sf_21">
+        <di:waypoint x="1410" y="835" />
+        <di:waypoint x="1410" y="880" />
+        <di:waypoint x="950" y="880" />
+        <di:waypoint x="950" y="1020" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="sf_22_di" bpmnElement="sf_22">
+        <di:waypoint x="1410" y="835" />
+        <di:waypoint x="1735" y="835" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="sf_23_di" bpmnElement="sf_23">
+        <di:waypoint x="1735" y="835" />
+        <di:waypoint x="1735" y="853" />
+        <di:waypoint x="1975" y="853" />
+        <di:waypoint x="1975" y="840" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="sf_24_di" bpmnElement="sf_24">
+        <di:waypoint x="1975" y="840" />
+        <di:waypoint x="1975" y="795" />
+        <di:waypoint x="680" y="795" />
+        <di:waypoint x="680" y="355" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="sf_25_di" bpmnElement="sf_25">
+        <di:waypoint x="1975" y="840" />
+        <di:waypoint x="1975" y="885" />
+        <di:waypoint x="1430" y="885" />
+        <di:waypoint x="1430" y="1195" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="sf_26_di" bpmnElement="sf_26">
+        <di:waypoint x="1430" y="1195" />
+        <di:waypoint x="1430" y="1150" />
+        <di:waypoint x="680" y="1150" />
+        <di:waypoint x="680" y="355" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="sf_27_di" bpmnElement="sf_27">
+        <di:waypoint x="1430" y="1195" />
+        <di:waypoint x="1770" y="1195" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="sf_28_di" bpmnElement="sf_28">
+        <di:waypoint x="1770" y="1195" />
+        <di:waypoint x="2105" y="1195" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="sf_29_di" bpmnElement="sf_29">
+        <di:waypoint x="2105" y="1195" />
+        <di:waypoint x="2425" y="1195" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="sf_30_di" bpmnElement="sf_30">
+        <di:waypoint x="2425" y="1195" />
+        <di:waypoint x="2425" y="1240" />
+        <di:waypoint x="2335" y="1240" />
+        <di:waypoint x="2335" y="1315" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="as_7_di" bpmnElement="as_7">
+        <di:waypoint x="135" y="185" />
+        <di:waypoint x="135" y="151" />
+        <di:waypoint x="880" y="151" />
+        <di:waypoint x="880" y="117" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="as_8_di" bpmnElement="as_8">
+        <di:waypoint x="875" y="790" />
+        <di:waypoint x="875" y="756" />
+        <di:waypoint x="1170" y="756" />
+        <di:waypoint x="1170" y="722" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="as_9_di" bpmnElement="as_9">
+        <di:waypoint x="1165" y="1020" />
+        <di:waypoint x="1165" y="981" />
+        <di:waypoint x="1425" y="981" />
+        <di:waypoint x="1425" y="942" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="as_10_di" bpmnElement="as_10">
+        <di:waypoint x="1735" y="835" />
+        <di:waypoint x="1735" y="868" />
+        <di:waypoint x="1800" y="868" />
+        <di:waypoint x="1800" y="902" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="as_11_di" bpmnElement="as_11">
+        <di:waypoint x="1770" y="1195" />
+        <di:waypoint x="1770" y="1228" />
+        <di:waypoint x="1780" y="1228" />
+        <di:waypoint x="1780" y="1262" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="as_12_di" bpmnElement="as_12">
+        <di:waypoint x="985" y="355" />
+        <di:waypoint x="985" y="337" />
+        <di:waypoint x="1490" y="337" />
+        <di:waypoint x="1490" y="322" />
+      </bpmndi:BPMNEdge>
+    </bpmndi:BPMNPlane>
+  </bpmndi:BPMNDiagram>
+</bpmn:definitions>
